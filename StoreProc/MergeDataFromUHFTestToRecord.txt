@@ -1,0 +1,31 @@
+CREATE PROC MergeDataFromUHFTestToRecord
+AS
+BEGIN
+	MERGE INTO dv_RFIDrecordmst AS Target
+	USING (
+		SELECT DISTINCT
+			COALESCE((SELECT TOP 1 device_name FROM dv_rfidreader WHERE device_sn = urt.sn AND device_ant = urt.ant),
+			         CONCAT(urt.sn, '/', urt.ant)) AS stationNO,
+			urt.epc AS EPC_Code,
+			MAX(urt.uploadTime) AS record_time,
+			COALESCE(
+				(SELECT TOP 1 rm.mo_no FROM dv_rfidmatchmst rm WHERE rm.EPC_Code = urt.epc AND rm.isactive = 'Y' AND rm.ri_cancel = 0 ORDER BY rm.created DESC),
+				NULL
+			) AS mo_no,
+			'from UHF_TEST' AS remark,
+			COALESCE(
+				(SELECT TOP 1 dr.cofactory_code FROM dv_rfidreader dr WHERE dr.device_sn = urt.sn AND dr.device_ant = urt.ant),
+				NULL
+			) AS f_c,
+			MAX(urt.updated) AS updated -- Use an appropriate aggregation function for the 'updated' column
+		FROM UHF_RFID_TEST urt
+		WHERE FORMAT(uploadTime, 'yyyyMMdd') = FORMAT(GETDATE(), 'yyyyMMdd')
+		GROUP BY urt.epc, urt.sn, urt.ant
+	) AS Source
+	ON Target.EPC_Code = Source.EPC_Code AND Target.stationNO = Source.stationNO AND Target.FC_server_code = Source.f_c
+	WHEN MATCHED AND Source.record_time <> Source.updated THEN
+		UPDATE SET Target.record_time = Source.record_time, Target.stationNO = Source.stationNO, Target.updated = GETDATE()
+	WHEN NOT MATCHED THEN
+		INSERT (stationNO, EPC_Code, record_time, mo_no, remark, FC_server_code, created)
+		VALUES (Source.stationNO, Source.EPC_Code, Source.record_time, Source.mo_no, Source.remark, Source.f_c, GETDATE());
+END

@@ -1,0 +1,27 @@
+CREATE PROCEDURE SP_UpsertEpcUHF
+    @id NVARCHAR(MAX),
+    @temperature NVARCHAR(MAX),
+    @ant INT,
+    @epc NVARCHAR(MAX),
+    @firstAnt NVARCHAR(MAX),
+    @firstTime DATETIME,
+    @lastTime DATETIME,
+    @rssi NVARCHAR(MAX),
+    @method NVARCHAR(MAX),
+    @sn NVARCHAR(MAX),
+    @uploadTime DATETIME
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    MERGE INTO DV_DATA_LAKE.dbo.UHF_RFID_TEST AS target
+    USING (VALUES (@id, @temperature, @ant, @epc, @firstAnt, @firstTime, @lastTime, @rssi, @method, @sn, @uploadTime)) AS source (id, temperature, ant, epc, firstAnt, firstTime, lastTime, rssi, method, sn, uploadTime)
+    ON target.sn = source.sn AND target.ant = source.ant AND target.epc = source.epc
+    WHEN MATCHED THEN
+        UPDATE SET
+            target.updated = GETDATE() ,
+            target.rssi = source.rssi
+    WHEN NOT MATCHED THEN
+        INSERT (id, temperature, ant, epc, firstAnt, firstTime, lastTime, rssi, method, sn, uploadTime,updated)
+        VALUES (source.id, source.temperature, source.ant, source.epc, source.firstAnt, source.firstTime, source.lastTime, source.rssi, source.method, source.sn, source.uploadTime,source.uploadTime);
+END;
